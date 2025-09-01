@@ -1,0 +1,3677 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+The content has been processed where security check has been disabled.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Security check has been disabled - content may contain sensitive information
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+backend/
+  agents/
+    __init__.py
+    agent_orchestrator.py
+    comparison_agent.py
+    extraction_agent.py
+    supplier_bom_agent.py
+    translation_agent.py
+  database/
+    __init__.py
+    item_matcher.py
+    knowledge_base.py
+  routers/
+    __init__.py
+    autonomous.py
+    knowledge_base.py
+  services/
+    __init__.py
+  utils/
+    __init__.py
+    gemini_client.py
+  __init__.py
+  main.py
+  requirements.txt
+frontend/
+  src/
+    components/
+      LanguageSwitcher.jsx
+      Layout.jsx
+      UI.jsx
+    hooks/
+      useTranslation.jsx
+    pages/
+      Dashboard.jsx
+      KnowledgeBase.jsx
+      Processing.jsx
+      Results.jsx
+      Settings.jsx
+      Upload.jsx
+    services/
+      translation.js
+    styles/
+      globals.css
+    App.jsx
+    main.jsx
+  index.html
+  package.json
+  postcss.config.js
+  tailwind.config.js
+  vite.config.js
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="backend/agents/__init__.py">
+# Agents package initialization
+</file>
+
+<file path="backend/agents/agent_orchestrator.py">
+"""
+Enhanced Autonomous Agent Orchestrator - Coordinates document-handling agents with QA classification
+"""
+import asyncio
+import json
+import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Callable, Dict, List, Optional
+from ..models.schemas import BOMComparisonResult,  QAClassificationSummary
+from ..database.knowledge_base import KnowledgeBase
+from ..database.item_matcher import ItemMatcher
+from .translation_agent import TranslationAgent
+from .extraction_agent import ExtractionAgent  
+from .supplier_bom_agent import SupplierBOMAgent
+from .comparison_agent import ComparisonAgent
+
+logger = logging.getLogger(__name__)
+
+class AgentOrchestrator:
+    def __init__(self, gemini_client):
+        self.gemini_client = gemini_client
+        # Initialize autonomous agents
+        self.translation_agent = TranslationAgent(gemini_client)
+        self.extraction_agent = ExtractionAgent(gemini_client)
+        self.supplier_bom_agent = SupplierBOMAgent(gemini_client)
+        self.comparison_agent = ComparisonAgent(gemini_client)
+
+        # Initialize knowledge base and matcher
+        try:
+            self.knowledge_base = KnowledgeBase()
+            self.item_matcher = ItemMatcher(self.knowledge_base)
+        except Exception as e:
+            logger.warning(f"Failed to initialize knowledge base: {e}")
+            self.knowledge_base = None
+            self.item_matcher = None
+
+        logger.info("Enhanced Autonomous Agent Orchestrator initialized with QA classification and Knowledge Base")
+
+    async def process_documents_enhanced(
+        self,
+        qa_document_path: str,
+        supplier_bom_path: str,
+        workflow_id: str,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict:
+        logger.info(f"Starting enhanced autonomous workflow for {workflow_id}")
+        try:
+            # Stage 1: Translation Agent
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback("translation", 5.0, "Translation agent processing QA document...")
+                else:
+                    progress_callback("translation", 5.0, "Translation agent processing QA document...")
+            translation_result = await self.translation_agent.process_document(
+                qa_document_path,
+                source_language="ja",
+                target_language="en"
+            )
+            await self._save_stage_result(workflow_id, "translation", translation_result)
+            if not translation_result or not translation_result.get('translated_content'):
+                raise Exception("Translation failed - no translated content received")
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback("translation", 30.0, "Translation completed successfully")
+                else:
+                    progress_callback("translation", 30.0, "Translation completed successfully")
+
+            # Stage 2: Extraction Agent
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback("extraction", 35.0, "Extraction agent processing materials with QA classification...")
+                else:
+                    progress_callback("extraction", 35.0, "Extraction agent processing materials with QA classification...")
+            extraction_result = await self.extraction_agent.process_translated_content(
+                translation_result['translated_content']
+            )
+            await self._save_stage_result(workflow_id, "extraction", extraction_result)
+            if not extraction_result or not extraction_result.get('materials'):
+                raise Exception("Material extraction failed - no materials extracted")
+            extracted_materials_raw = extraction_result['materials']
+            logger.info(f"Extracted {len(extracted_materials_raw)} materials with QA classification")
+
+            # Convert ExtractedMaterial models to dicts for compatibility
+            if extracted_materials_raw and hasattr(extracted_materials_raw[0], 'dict'):
+                extracted_materials = [m.dict() for m in extracted_materials_raw]
+            else:
+                extracted_materials = extracted_materials_raw
+
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback("extraction", 60.0, f"Extracted {len(extracted_materials)} materials with QA classification")
+                else:
+                    progress_callback("extraction", 60.0, f"Extracted {len(extracted_materials)} materials with QA classification")
+
+            # Stage 3: Supplier BOM Agent
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback("supplier_bom", 65.0, "Supplier BOM agent processing Excel data...")
+                else:
+                    progress_callback("supplier_bom", 65.0, "Supplier BOM agent processing Excel data...")
+            supplier_result = await self.supplier_bom_agent.process_supplier_bom(
+                supplier_bom_path
+            )
+            await self._save_stage_result(workflow_id, "supplier_bom", supplier_result)
+            if not supplier_result or not supplier_result.get('items'):
+                raise Exception("Supplier BOM processing failed - no items extracted")
+            supplier_items = supplier_result['items']
+            logger.info(f"Processed {len(supplier_items)} supplier BOM items")
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback("supplier_bom", 80.0, f"Processed {len(supplier_items)} supplier BOM items")
+                else:
+                    progress_callback("supplier_bom", 80.0, f"Processed {len(supplier_items)} supplier BOM items")
+
+            # Stage 4: Comparison and Knowledge Base
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback("comparison", 85.0, "Enhanced comparison using knowledge base...")
+                else:
+                    progress_callback("comparison", 85.0, "Enhanced comparison using knowledge base...")
+
+            if self.item_matcher:
+                matched_models = self.item_matcher.match_items_with_knowledge_base(
+                    extracted_materials_raw,  # pass raw models if required
+                    supplier_items,
+                    workflow_id
+                )
+                # Convert matched models to dicts
+                enhanced_matches = [m.dict() for m in matched_models]
+            else:
+                enhanced_matches = await self.comparison_agent.compare_materials(
+                    extracted_materials,
+                    supplier_items
+                )
+
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback("comparison", 95.0, "Knowledge base matching completed")
+                else:
+                    progress_callback("comparison", 95.0, "Knowledge base matching completed")
+
+            final_result = {
+                "workflow_id": workflow_id,
+                "matches": enhanced_matches,
+                "summary": {
+                    "total_materials": len(extracted_materials),
+                    "total_supplier_items": len(supplier_items),
+                    "successful_matches": sum(1 for m in enhanced_matches if m.get('confidence_score', 0) > 0.5),
+                    "knowledge_base_matches": sum(1 for m in enhanced_matches if m.get('has_previous_match', False)),
+                    "processing_date": datetime.utcnow().isoformat(),
+                    "enhanced_matching": True
+                },
+                "knowledge_stats": self.knowledge_base.get_processing_stats() if self.knowledge_base else {},
+                "qa_classification_summary": self._generate_qa_classification_summary(enhanced_matches)
+            }
+            await self._save_stage_result(workflow_id, "final", final_result)
+
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback("completed", 100.0, "Processing completed successfully")
+                else:
+                    progress_callback("completed", 100.0, "Processing completed successfully")
+
+            logger.info(f"Enhanced workflow {workflow_id} completed successfully")
+            return final_result
+
+        except Exception as e:
+            logger.error(f"Enhanced workflow failed for {workflow_id}: {str(e)}")
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback("error", 0.0, f"Processing failed: {str(e)}")
+                else:
+                    progress_callback("error", 0.0, f"Processing failed: {str(e)}")
+            raise
+
+    async def process_documents(self, qa_document_path, supplier_bom_path, workflow_id, progress_callback=None):
+        result = await self.process_documents_enhanced(
+            qa_document_path, supplier_bom_path, workflow_id, progress_callback
+        )
+        return BOMComparisonResult(
+            workflow_id=result['workflow_id'],
+            matches=result['matches'],
+            summary=result['summary']
+        )
+
+    def _generate_qa_classification_summary(self, matches: List[Dict]) -> Dict:
+        classification_counts = {}
+        confidence_distribution = {"high": 0, "medium": 0, "low": 0}
+        for m in matches:
+            label = m.get('qa_classification_label', 5)
+            classification_counts[label] = classification_counts.get(label, 0) + 1
+            conf_level = m.get('qa_confidence_level', 'medium').lower()
+            if conf_level in confidence_distribution:
+                confidence_distribution[conf_level] += 1
+        return {
+            "classification_counts": classification_counts,
+            "confidence_distribution": confidence_distribution,
+            "total_items": len(matches)
+        }
+
+    async def _save_stage_result(self, workflow_id: str, stage: str, result: Dict):
+        try:
+            stage_dir = Path(f"results/{workflow_id}")
+            stage_dir.mkdir(parents=True, exist_ok=True)
+            stage_file = stage_dir / f"{stage}_result.json"
+            with open(stage_file, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2, default=str)
+            logger.info(f"Saved {stage} results for workflow {workflow_id}")
+        except Exception as e:
+            logger.warning(f"Failed to save {stage} results for workflow {workflow_id}: {e}")
+</file>
+
+<file path="backend/agents/comparison_agent.py">
+"""
+Comparison Agent - Compares materials with supplier BOM
+"""
+
+import logging
+from typing import Dict, List
+
+logger = logging.getLogger(__name__)
+
+class ComparisonAgent:
+    def __init__(self, gemini_client):
+        self.gemini_client = gemini_client
+
+    async def compare_materials(self, materials: List[Dict], supplier_items: List[Dict]) -> List[Dict]:
+        """Compare materials with supplier BOM"""
+        try:
+            matched_materials = []
+
+            for material in materials:
+                # Simple matching logic for demo
+                material_copy = material.copy()
+                material_copy.update({
+                    'confidence_score': 0.8,
+                    'supplier_description': 'Matched supplier item',
+                    'supplier_part_number': 'SP001',
+                    'match_source': 'supplier_bom',
+                    'reasoning': 'Matched based on material name similarity'
+                })
+                matched_materials.append(material_copy)
+
+            return matched_materials
+        except Exception as e:
+            logger.error(f"Comparison failed: {e}")
+            raise
+</file>
+
+<file path="backend/agents/extraction_agent.py">
+"""
+Enhanced Autonomous Extraction Agent - Handles material extraction with QA classification
+"""
+
+import logging
+import json
+from typing import List, Dict
+from ..models.schemas import ExtractedMaterial, QAClassificationLabel, ActionPathRAG, ConfidenceLevel
+
+logger = logging.getLogger(__name__)
+
+class ExtractionAgent:
+    def __init__(self, gemini_client):
+        self.gemini_client = gemini_client
+        self.stats = {"extractions_performed": 0, "materials_extracted": 0, "chunks_processed": 0, "errors": 0}
+        logger.info("Enhanced Autonomous Extraction Agent initialized with QA classification")
+
+    async def process_translated_content(self, translated_content: str, focus_categories: List[str] = None) -> dict:
+        """Process translated content and extract materials with QA classification"""
+        try:
+            if not focus_categories:
+                focus_categories = [
+                    "fasteners", "adhesives", "seals", "gaskets", 
+                    "electrical", "connectors", "hardware", "consumables", "jigs", "tools"
+                ]
+
+            logger.info(f"Processing translated content ({len(translated_content)} characters)")
+
+            # Step 1: Split content into extraction chunks
+            chunks = self._split_into_extraction_chunks(translated_content)
+            logger.info(f"Split content into {len(chunks)} chunks for extraction")
+
+            # Step 2: Extract materials from each chunk with enhanced fields
+            all_materials = []
+            for i, chunk in enumerate(chunks):
+                logger.info(f"Extracting from chunk {i+1}/{len(chunks)}")
+                chunk_materials = await self._extract_from_chunk_enhanced(chunk, focus_categories)
+                all_materials.extend(chunk_materials)
+
+            # Step 3: Deduplicate and finalize
+            unique_materials = self._deduplicate_materials(all_materials)
+
+            # Step 4: Generate classification summary
+            classification_summary = self._generate_classification_summary(unique_materials)
+
+            # Update statistics
+            self.stats["extractions_performed"] += 1
+            self.stats["materials_extracted"] += len(unique_materials)
+            self.stats["chunks_processed"] += len(chunks)
+
+            return {
+                "success": True,
+                "materials": unique_materials,
+                "total_materials": len(unique_materials),
+                "chunks_processed": len(chunks),
+                "focus_categories": focus_categories,
+                "confidence_distribution": self._calculate_confidence_distribution(unique_materials),
+                "qa_classification_summary": classification_summary,
+                "processing_stats": self.stats.copy()
+            }
+
+        except Exception as e:
+            self.stats["errors"] += 1
+            logger.error(f"Extraction processing error: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "materials": [],
+                "processing_stats": self.stats.copy()
+            }
+
+    def _split_into_extraction_chunks(self, text: str, max_chunk_size: int = 2000) -> List[str]:
+        """Split text into chunks suitable for material extraction"""
+        if len(text) <= max_chunk_size:
+            return [text]
+
+        chunks = []
+        sections = text.split('\n\n')
+        current_chunk = []
+        current_length = 0
+
+        for section in sections:
+            if current_length + len(section) > max_chunk_size and current_chunk:
+                chunks.append('\n\n'.join(current_chunk))
+                current_chunk = [section]
+                current_length = len(section)
+            else:
+                current_chunk.append(section)
+                current_length += len(section)
+
+        if current_chunk:
+            chunks.append('\n\n'.join(current_chunk))
+
+        return chunks
+
+    async def _extract_from_chunk_enhanced(self, text: str, categories: List[str]) -> List[ExtractedMaterial]:
+        """Extract materials with enhanced QA classification from a single text chunk"""
+        if not self.gemini_client or not self.gemini_client.is_available():
+            return self._create_demo_materials_chunk_enhanced()
+
+        extraction_prompt = f"""Extract materials from this technical Work Instruction (QA) document section and classify them according to QA processing rules.
+
+Focus on these categories: {', '.join(categories)}
+
+For each material found, provide JSON format with ALL these fields:
+{{
+    "name": "material name/description",
+    "category": "one of {categories}",
+    "specifications": {{"key": "value"}},
+    "context": "surrounding text explaining usage",
+    "confidence_score": 0.8,
+
+    // Enhanced QA Classification Fields:
+    "qc_process_step": "QC step or work instruction step if mentioned or null", 
+    "consumable_jigs_tools": true/false,
+    "name_mismatch": false,
+    "part_number": "PN if available or null",
+    "pn_mismatch": false,
+    "quantity": number or null,
+    "unit_of_measure": "UoM if available or null",
+    "obsolete_pn": false,
+    "vendor_name": "vendor if mentioned or null",
+    "kit_available": true/false,
+    "ai_engine_processing": "processing notes"
+}}
+
+Text section:
+{text}
+
+Return as JSON array of materials with enhanced classification:"""
+
+        try:
+            response = await self.gemini_client.generate_content(
+                extraction_prompt,
+                temperature=0.2,
+                max_tokens=2000
+            )
+
+            # Parse AI response
+            response_cleaned = response.strip()
+            if response_cleaned.startswith("```json"):
+                response_cleaned = response_cleaned[7:-3]
+            elif response_cleaned.startswith("```"):
+                response_cleaned = response_cleaned[3:-3]
+
+            materials_data = json.loads(response_cleaned)
+            materials = []
+
+            for material_data in materials_data:
+                # Create enhanced material with classification
+                material = self._create_enhanced_material(material_data, text)
+                materials.append(material)
+
+            return materials
+
+        except Exception as e:
+            logger.warning(f"AI extraction failed for chunk: {e}")
+            return self._create_demo_materials_chunk_enhanced()
+
+    def _create_enhanced_material(self, material_data: dict, source_text: str) -> ExtractedMaterial:
+        """Create enhanced material with QA classification"""
+
+        # Determine classification based on available data
+        classification_result = self._classify_material(material_data)
+
+        material = ExtractedMaterial(
+            # Original fields
+            name=material_data.get("name", "Unknown Material"),
+            category=material_data.get("category", "uncategorized"),
+            specifications=material_data.get("specifications", {}),
+            context=material_data.get("context", ""),
+            confidence_score=float(material_data.get("confidence_score", 0.5)),
+            source_section=source_text[:200] + "..." if len(source_text) > 200 else source_text,
+
+            # Enhanced QA fields
+            qc_process_step=material_data.get("qc_process_step"),
+            consumable_jigs_tools=material_data.get("consumable_jigs_tools", False),
+            name_mismatch=material_data.get("name_mismatch", False),
+            part_number=material_data.get("part_number"),
+            pn_mismatch=material_data.get("pn_mismatch", False),
+            quantity=material_data.get("quantity"),
+            unit_of_measure=material_data.get("unit_of_measure"),
+            obsolete_pn=material_data.get("obsolete_pn", False),
+            vendor_name=material_data.get("vendor_name"),
+            kit_available=material_data.get("kit_available", False),
+            ai_engine_processing=material_data.get("ai_engine_processing", "AI processed"),
+
+            # Classification results
+            confidence_level=classification_result["confidence_level"],
+            action_path_rag=classification_result["action_path"],
+            classification_label=classification_result["label"],
+            classification_reasoning=classification_result["reasoning"]
+        )
+
+        return material
+
+    def _classify_material(self, material_data: dict) -> dict:
+        """Classify material based on QA rules (1-13)"""
+
+        has_consumable = material_data.get("consumable_jigs_tools", False)
+        has_pn = bool(material_data.get("part_number"))
+        has_qty = bool(material_data.get("quantity"))
+        has_specs = bool(material_data.get("specifications"))
+        has_vendor = bool(material_data.get("vendor_name"))
+        has_kit = material_data.get("kit_available", False)
+        pn_mismatch = material_data.get("pn_mismatch", False)
+        obsolete_pn = material_data.get("obsolete_pn", False)
+
+        # Apply classification rules
+        if has_consumable and has_pn and has_qty and has_specs:
+            return {
+                "label": QAClassificationLabel.CONSUMABLE_WITH_PN_SPEC_QTY,
+                "confidence_level": ConfidenceLevel.HIGH,
+                "action_path": ActionPathRAG.GREEN,
+                "reasoning": "Consumable with PN, specifications, and quantity - Auto-Register"
+            }
+        elif has_consumable and has_pn and has_qty:
+            return {
+                "label": QAClassificationLabel.CONSUMABLE_WITH_PN_QTY,
+                "confidence_level": ConfidenceLevel.HIGH,
+                "action_path": ActionPathRAG.GREEN,
+                "reasoning": "Consumable with PN and quantity - Auto-Register"
+            }
+        elif has_consumable and has_pn and not has_qty:
+            return {
+                "label": QAClassificationLabel.CONSUMABLE_NO_QTY,
+                "confidence_level": ConfidenceLevel.MEDIUM,
+                "action_path": ActionPathRAG.AMBER,
+                "reasoning": "Consumable with PN but no quantity - Auto with Flag"
+            }
+        elif has_consumable and not has_pn:
+            return {
+                "label": QAClassificationLabel.CONSUMABLE_NO_PN,
+                "confidence_level": ConfidenceLevel.LOW,
+                "action_path": ActionPathRAG.RED,
+                "reasoning": "Consumable mentioned but no part number - Human Intervention Required"
+            }
+        elif obsolete_pn:
+            return {
+                "label": QAClassificationLabel.CONSUMABLE_OBSOLETE_PN,
+                "confidence_level": ConfidenceLevel.LOW,
+                "action_path": ActionPathRAG.RED,
+                "reasoning": "Obsolete part number detected - Human Intervention Required"
+            }
+        elif pn_mismatch:
+            return {
+                "label": QAClassificationLabel.CONSUMABLE_PN_MISMATCH,
+                "confidence_level": ConfidenceLevel.LOW,
+                "action_path": ActionPathRAG.RED,
+                "reasoning": "Part number mismatch detected - Human Intervention Required"
+            }
+        elif has_vendor and has_kit and not has_pn:
+            return {
+                "label": QAClassificationLabel.VENDOR_KIT_NO_PN,
+                "confidence_level": ConfidenceLevel.LOW,
+                "action_path": ActionPathRAG.RED,
+                "reasoning": "Vendor and kit mentioned but no PN - Human Intervention Required"
+            }
+        elif has_vendor and not has_consumable:
+            return {
+                "label": QAClassificationLabel.VENDOR_NAME_ONLY,
+                "confidence_level": ConfidenceLevel.MEDIUM,
+                "action_path": ActionPathRAG.AMBER,
+                "reasoning": "Only vendor name mentioned - Auto with Flag"
+            }
+        elif has_kit:
+            return {
+                "label": QAClassificationLabel.PRE_ASSEMBLED_KIT,
+                "confidence_level": ConfidenceLevel.MEDIUM,
+                "action_path": ActionPathRAG.AMBER,
+                "reasoning": "Pre-assembled kit mentioned - Auto with Flag"
+            }
+        else:
+            return {
+                "label": QAClassificationLabel.NO_CONSUMABLE_MENTIONED,
+                "confidence_level": ConfidenceLevel.LOW,
+                "action_path": ActionPathRAG.RED,
+                "reasoning": "No clear consumable/jigs/tools mentioned - Human Intervention Required"
+            }
+
+    def _create_demo_materials_chunk_enhanced(self) -> List[ExtractedMaterial]:
+        """Create demo materials with enhanced classification when AI is not available"""
+        return [
+            ExtractedMaterial(
+                name="M6x20mm Hex Bolt",
+                category="fasteners",
+                specifications={"size": "M6x20mm", "type": "hex bolt", "material": "stainless steel"},
+                context="Use M6×20 hex bolts for chassis mounting",
+                confidence_score=0.95,
+                source_section="Demo chunk - configure GEMINI_API_KEY for real processing",
+
+                # Enhanced fields
+                qc_process_step="Assembly Step 3",
+                consumable_jigs_tools=True,
+                part_number="BOLT-M6-20-SS",
+                quantity=4.0,
+                unit_of_measure="pieces",
+                ai_engine_processing="Demo mode - AI classification",
+                confidence_level=ConfidenceLevel.HIGH,
+                action_path_rag=ActionPathRAG.GREEN,
+                classification_label=QAClassificationLabel.CONSUMABLE_WITH_PN_QTY,
+                classification_reasoning="Demo: Consumable with PN and quantity - Auto-Register"
+            )
+        ]
+
+    def _generate_classification_summary(self, materials: List[ExtractedMaterial]) -> dict:
+        """Generate summary of QA classifications"""
+        if not materials:
+            return {
+                "total_materials": 0,
+                "green_materials": 0,
+                "amber_materials": 0,
+                "red_materials": 0,
+                "classification_breakdown": {}
+            }
+
+        green_count = sum(1 for m in materials if m.action_path_rag == ActionPathRAG.GREEN)
+        amber_count = sum(1 for m in materials if m.action_path_rag == ActionPathRAG.AMBER)
+        red_count = sum(1 for m in materials if m.action_path_rag == ActionPathRAG.RED)
+
+        # Classification breakdown by label
+        breakdown = {}
+        for material in materials:
+            label_name = f"Label {material.classification_label.value}"
+            breakdown[label_name] = breakdown.get(label_name, 0) + 1
+
+        return {
+            "total_materials": len(materials),
+            "green_materials": green_count,
+            "amber_materials": amber_count, 
+            "red_materials": red_count,
+            "classification_breakdown": breakdown
+        }
+
+    def _deduplicate_materials(self, materials: List[ExtractedMaterial]) -> List[ExtractedMaterial]:
+        """Remove duplicate materials"""
+        if not materials:
+            return []
+
+        unique_materials = []
+        seen_names = set()
+
+        for material in materials:
+            name_key = material.name.lower().strip()
+            if name_key not in seen_names:
+                seen_names.add(name_key)
+                unique_materials.append(material)
+
+        return unique_materials
+
+    def _calculate_confidence_distribution(self, materials: List[ExtractedMaterial]) -> Dict:
+        """Calculate confidence score distribution"""
+        if not materials:
+            return {"high": 0, "medium": 0, "low": 0}
+
+        high = sum(1 for m in materials if m.confidence_score >= 0.8)
+        medium = sum(1 for m in materials if 0.6 <= m.confidence_score < 0.8)
+        low = sum(1 for m in materials if m.confidence_score < 0.6)
+
+        return {"high": high, "medium": medium, "low": low}
+
+    def get_stats(self) -> Dict:
+        """Get processing statistics"""
+        return self.stats.copy()
+</file>
+
+<file path="backend/agents/supplier_bom_agent.py">
+"""
+Supplier BOM Agent - Processes supplier BOM files
+"""
+
+import logging
+from typing import Dict, List
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+class SupplierBOMAgent:
+    def __init__(self, gemini_client):
+        self.gemini_client = gemini_client
+
+    async def process_supplier_bom(self, file_path: str) -> Dict:
+        """Process supplier BOM file"""
+        try:
+            # Read Excel/CSV file
+            if file_path.endswith('.csv'):
+                df = pd.read_csv(file_path)
+            else:
+                df = pd.read_excel(file_path)
+
+            # Convert to list of dictionaries
+            items = []
+            for _, row in df.iterrows():
+                item = {
+                    'description': row.get('Description', row.get('description', '')),
+                    'part_number': row.get('Part Number', row.get('part_number', '')),
+                    'quantity': row.get('Quantity', row.get('quantity', '')),
+                    'unit_price': row.get('Unit Price', row.get('unit_price', 0))
+                }
+                items.append(item)
+
+            return {
+                'items': items,
+                'total_items': len(items),
+                'processing_status': 'success'
+            }
+        except Exception as e:
+            logger.error(f"Supplier BOM processing failed: {e}")
+            # Return mock data for demo
+            return {
+                'items': [
+                    {
+                        'description': 'Sample Supplier Item',
+                        'part_number': 'SP001',
+                        'quantity': '5',
+                        'unit_price': 10.0
+                    }
+                ],
+                'total_items': 1,
+                'processing_status': 'success'
+            }
+</file>
+
+<file path="backend/agents/translation_agent.py">
+"""
+CORRECTED Translation Agent - Handles DOCX and XLSX files properly
+"""
+
+import asyncio
+import logging
+from pathlib import Path
+from typing import Dict, Optional
+import io
+from docx import Document
+import pandas as pd
+import openpyxl
+from PyPDF2 import PdfReader
+
+logger = logging.getLogger(__name__)
+
+class TranslationAgent:
+    def __init__(self, gemini_client):
+        self.gemini_client = gemini_client
+        logger.info("Translation Agent initialized")
+
+    async def process_document(
+        self, 
+        document_path: str, 
+        source_language: str = "ja", 
+        target_language: str = "en"
+    ) -> Dict:
+        """Process document with proper file type handling"""
+        try:
+            document_path = Path(document_path)
+            
+            # Extract text based on file extension
+            if document_path.suffix.lower() == '.docx':
+                extracted_text = self._extract_docx_text(document_path)
+            elif document_path.suffix.lower() in ['.xlsx', '.xls']:
+                extracted_text = self._extract_excel_text(document_path)
+            elif document_path.suffix.lower() == '.pdf':
+                extracted_text = self._extract_pdf_text(document_path)
+            elif document_path.suffix.lower() in ['.txt']:
+                extracted_text = self._extract_text_file(document_path)
+            else:
+                raise ValueError(f"Unsupported file format: {document_path.suffix}")
+            
+            if not extracted_text.strip():
+                raise Exception("No text could be extracted from the document")
+            
+            # Translate if needed
+            if source_language != target_language:
+                translated_text = await self._translate_text(extracted_text, source_language, target_language)
+            else:
+                translated_text = extracted_text
+            
+            return {
+                'original_text': extracted_text,
+                'translated_content': translated_text,
+                'source_language': source_language,
+                'target_language': target_language,
+                'document_path': str(document_path)
+            }
+            
+        except Exception as e:
+            logger.error(f"Translation failed: {str(e)}")
+            raise
+
+    def _extract_docx_text(self, file_path: Path) -> str:
+        """Extract text from DOCX file"""
+        try:
+            # Read as binary and use python-docx
+            doc = Document(file_path)
+            
+            full_text = []
+            
+            # Extract text from paragraphs
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    full_text.append(paragraph.text)
+            
+            # Extract text from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            full_text.append(cell.text)
+            
+            return '\n'.join(full_text)
+            
+        except Exception as e:
+            logger.error(f"Error extracting DOCX text: {e}")
+            raise Exception(f"Failed to extract text from DOCX: {str(e)}")
+
+    def _extract_excel_text(self, file_path: Path) -> str:
+        """Extract text from Excel file (XLSX/XLS)"""
+        try:
+            # Use openpyxl for XLSX files
+            if file_path.suffix.lower() == '.xlsx':
+                workbook = openpyxl.load_workbook(file_path)
+            else:
+                # For older XLS files, use pandas
+                df = pd.read_excel(file_path, sheet_name=None)  # Read all sheets
+                text_parts = []
+                for sheet_name, sheet_df in df.items():
+                    text_parts.append(f"Sheet: {sheet_name}")
+                    text_parts.append(sheet_df.to_string())
+                return '\n'.join(text_parts)
+            
+            text_parts = []
+            
+            for sheet_name in workbook.sheetnames:
+                worksheet = workbook[sheet_name]
+                text_parts.append(f"Sheet: {sheet_name}")
+                
+                for row in worksheet.iter_rows():
+                    row_data = []
+                    for cell in row:
+                        if cell.value is not None:
+                            row_data.append(str(cell.value))
+                    if row_data:
+                        text_parts.append('\t'.join(row_data))
+            
+            return '\n'.join(text_parts)
+            
+        except Exception as e:
+            logger.error(f"Error extracting Excel text: {e}")
+            raise Exception(f"Failed to extract text from Excel: {str(e)}")
+
+    def _extract_pdf_text(self, file_path: Path) -> str:
+        """Extract text from PDF file"""
+        try:
+            with open(file_path, 'rb') as file:
+                pdf_reader = PdfReader(file)
+                text_parts = []
+                
+                for page_num, page in enumerate(pdf_reader.pages):
+                    text = page.extract_text()
+                    if text.strip():
+                        text_parts.append(f"Page {page_num + 1}:")
+                        text_parts.append(text)
+                
+                return '\n'.join(text_parts)
+                
+        except Exception as e:
+            logger.error(f"Error extracting PDF text: {e}")
+            raise Exception(f"Failed to extract text from PDF: {str(e)}")
+
+    def _extract_text_file(self, file_path: Path) -> str:
+        """Extract text from plain text file with encoding detection"""
+        try:
+            # Try UTF-8 first
+            try:
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    return file.read()
+            except UnicodeDecodeError:
+                # Try other encodings
+                encodings = ['cp1252', 'iso-8859-1', 'latin-1']
+                for encoding in encodings:
+                    try:
+                        with open(file_path, 'r', encoding=encoding) as file:
+                            return file.read()
+                    except UnicodeDecodeError:
+                        continue
+                
+                # If all fail, read as binary and decode with error handling
+                with open(file_path, 'rb') as file:
+                    return file.read().decode('utf-8', errors='replace')
+                    
+        except Exception as e:
+            logger.error(f"Error extracting text file: {e}")
+            raise Exception(f"Failed to extract text from file: {str(e)}")
+
+    async def _translate_text(self, text: str, source_lang: str, target_lang: str) -> str:
+                """Translate text using Gemini API"""
+                try:
+                    prompt = f"""
+                    Please translate the following text from {source_lang} to {target_lang}.
+            
+                    Text to translate:
+                    {text}
+            
+                    Please provide only the translation without any additional commentary.
+                    """
+                    translated = await self.gemini_client.generate_content_async(prompt)
+                    return translated
+                except Exception as e:
+                    logger.error(f"Translation API failed: {e}")
+                    # Return original text if translation fails
+                    return text
+            
+
+    # Handle FastAPI UploadFile objects
+    async def process_upload_file(
+        self,
+        upload_file,
+        source_language: str = "ja",
+        target_language: str = "en"
+    ) -> Dict:
+        """Process UploadFile object directly without saving to disk"""
+        try:
+            file_content = await upload_file.read()
+            filename = upload_file.filename
+            
+            # Determine file type and extract text
+            if filename.lower().endswith('.docx'):
+                extracted_text = self._extract_docx_from_bytes(file_content)
+            elif filename.lower().endswith('.xlsx'):
+                extracted_text = self._extract_excel_from_bytes(file_content)
+            elif filename.lower().endswith('.pdf'):
+                extracted_text = self._extract_pdf_from_bytes(file_content)
+            elif filename.lower().endswith('.txt'):
+                extracted_text = file_content.decode('utf-8', errors='replace')
+            else:
+                raise ValueError(f"Unsupported file format: {filename}")
+            
+            if not extracted_text.strip():
+                raise Exception("No text could be extracted from the document")
+            
+            # Translate if needed
+            if source_language != target_language:
+                translated_text = await self._translate_text(extracted_text, source_language, target_language)
+            else:
+                translated_text = extracted_text
+            
+            return {
+                'original_text': extracted_text,
+                'translated_content': translated_text,
+                'source_language': source_language,
+                'target_language': target_language,
+                'filename': filename
+            }
+            
+        except Exception as e:
+            logger.error(f"Upload file processing failed: {str(e)}")
+            raise
+
+    def _extract_docx_from_bytes(self, file_bytes: bytes) -> str:
+        """Extract text from DOCX bytes"""
+        try:
+            doc = Document(io.BytesIO(file_bytes))
+            
+            full_text = []
+            
+            # Extract text from paragraphs
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    full_text.append(paragraph.text)
+            
+            # Extract text from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            full_text.append(cell.text)
+            
+            return '\n'.join(full_text)
+            
+        except Exception as e:
+            raise Exception(f"Failed to extract text from DOCX bytes: {str(e)}")
+
+    def _extract_excel_from_bytes(self, file_bytes: bytes) -> str:
+        """Extract text from Excel bytes"""
+        try:
+            workbook = openpyxl.load_workbook(io.BytesIO(file_bytes))
+            text_parts = []
+            
+            for sheet_name in workbook.sheetnames:
+                worksheet = workbook[sheet_name]
+                text_parts.append(f"Sheet: {sheet_name}")
+                
+                for row in worksheet.iter_rows():
+                    row_data = []
+                    for cell in row:
+                        if cell.value is not None:
+                            row_data.append(str(cell.value))
+                    if row_data:
+                        text_parts.append('\t'.join(row_data))
+            
+            return '\n'.join(text_parts)
+            
+        except Exception as e:
+            raise Exception(f"Failed to extract text from Excel bytes: {str(e)}")
+
+    def _extract_pdf_from_bytes(self, file_bytes: bytes) -> str:
+        """Extract text from PDF bytes"""
+        try:
+            pdf_reader = PdfReader(io.BytesIO(file_bytes))
+            text_parts = []
+            
+            for page_num, page in enumerate(pdf_reader.pages):
+                text = page.extract_text()
+                if text.strip():
+                    text_parts.append(f"Page {page_num + 1}:")
+                    text_parts.append(text)
+            
+            return '\n'.join(text_parts)
+            
+        except Exception as e:
+            raise Exception(f"Failed to extract text from PDF bytes: {str(e)}")
+</file>
+
+<file path="backend/database/__init__.py">
+# Database package initialization
+</file>
+
+<file path="backend/database/item_matcher.py">
+import logging
+from typing import List, Dict, Tuple
+from .knowledge_base import KnowledgeBase
+
+logger = logging.getLogger(__name__)
+
+class ItemMatcher:
+    def __init__(self, knowledge_base: KnowledgeBase):
+        self.kb = knowledge_base
+
+    def match_items_with_knowledge_base(self, extracted_items: List[Dict], 
+                                      supplier_bom: List[Dict], 
+                                      workflow_id: str) -> List[Dict]:
+        """
+        Enhanced matching that leverages knowledge base for better accuracy
+        """
+        enhanced_matches = []
+
+        # First, add new items to knowledge base
+        try:
+            new_item_ids = self.kb.add_items(extracted_items, workflow_id)
+        except Exception as e:
+            logger.error(f"Failed to add items to knowledge base: {e}")
+            new_item_ids = []
+
+        for i, item in enumerate(extracted_items):
+            material_name = item.get('qa_material_name', '')
+            part_number = item.get('part_number', '')
+
+            # Check knowledge base for previous matches
+            try:
+                kb_matches = self.kb.find_similar_items(material_name, part_number)
+            except Exception as e:
+                logger.error(f"Failed to find similar items: {e}")
+                kb_matches = []
+
+            # Find matches in current supplier BOM
+            supplier_matches = self._find_supplier_matches(item, supplier_bom)
+
+            # Combine and rank matches
+            best_match = self._select_best_match(item, kb_matches, supplier_matches)
+
+            # Generate reasoning for the match
+            reasoning = self._generate_match_reasoning(kb_matches, supplier_matches, best_match)
+
+            # Create enhanced match result
+            match_result = {
+                **item,
+                'knowledge_base_matches': len(kb_matches),
+                'supplier_matches': len(supplier_matches),
+                'has_previous_match': len(kb_matches) > 0,
+                'match_source': self._determine_match_source(kb_matches, supplier_matches),
+                'confidence_score': best_match.get('confidence_score', 0.0) if best_match else 0.0,
+                'supplier_description': best_match.get('supplier_description', '') if best_match else '',
+                'supplier_part_number': best_match.get('supplier_part_number', '') if best_match else '',
+                'reasoning': reasoning
+            }
+
+            enhanced_matches.append(match_result)
+
+        return enhanced_matches
+
+    def _find_supplier_matches(self, item: Dict, supplier_bom: List[Dict]) -> List[Dict]:
+        """Find matches in current supplier BOM"""
+        material_name = item.get('qa_material_name', '').lower()
+        part_number = item.get('part_number', '')
+
+        matches = []
+
+        for supplier_item in supplier_bom:
+            supplier_desc = supplier_item.get('description', '').lower()
+            supplier_part = supplier_item.get('part_number', '')
+
+            confidence = 0.0
+
+            # Exact part number match
+            if part_number and supplier_part and part_number == supplier_part:
+                confidence = 0.95
+            # Name similarity (simple word matching for now)
+            elif material_name and supplier_desc:
+                common_words = set(material_name.split()) & set(supplier_desc.split())
+                if common_words:
+                    word_match_ratio = len(common_words) / max(len(material_name.split()), len(supplier_desc.split()))
+                    confidence = min(0.9, word_match_ratio * 0.8)
+
+            if confidence > 0.3:  # Minimum threshold
+                matches.append({
+                    'supplier_description': supplier_item.get('description', ''),
+                    'supplier_part_number': supplier_item.get('part_number', ''),
+                    'confidence_score': confidence,
+                    'match_type': 'part_number' if confidence > 0.9 else 'description'
+                })
+
+        return sorted(matches, key=lambda x: x['confidence_score'], reverse=True)
+
+    def _select_best_match(self, item: Dict, kb_matches: List[Dict], 
+                          supplier_matches: List[Dict]) -> Dict:
+        """Select the best match from knowledge base and supplier matches"""
+
+        # Prioritize knowledge base exact matches
+        for kb_match in kb_matches:
+            if kb_match.get('match_type') == 'exact':
+                return {
+                    'id': kb_match.get('id'),
+                    'supplier_description': kb_match.get('material_name'),
+                    'supplier_part_number': kb_match.get('part_number', ''),
+                    'confidence_score': 0.9,
+                    'match_type': 'exact',
+                    'match_source': 'knowledge_base'
+                }
+
+        # Then prioritize supplier matches
+        if supplier_matches:
+            best_supplier = max(supplier_matches, key=lambda x: x.get('confidence_score', 0))
+            if best_supplier.get('confidence_score', 0) > 0.7:
+                return {
+                    **best_supplier,
+                    'match_source': 'supplier_bom'
+                }
+
+        # Fall back to knowledge base fuzzy matches
+        if kb_matches:
+            best_kb = max(kb_matches, key=lambda x: x.get('confidence_score', 0))
+            return {
+                'id': best_kb.get('id'),
+                'supplier_description': best_kb.get('material_name'),
+                'supplier_part_number': best_kb.get('part_number', ''),
+                'confidence_score': 0.6,
+                'match_type': 'fuzzy',
+                'match_source': 'knowledge_base'
+            }
+
+        return {}
+
+    def _determine_match_source(self, kb_matches: List[Dict], 
+                               supplier_matches: List[Dict]) -> str:
+        """Determine the primary source of the match"""
+        if kb_matches and supplier_matches:
+            return 'hybrid'
+        elif kb_matches:
+            return 'knowledge_base'
+        elif supplier_matches:
+            return 'supplier_bom'
+        else:
+            return 'no_match'
+
+    def _generate_match_reasoning(self, kb_matches: List[Dict], 
+                                 supplier_matches: List[Dict], 
+                                 best_match: Dict) -> str:
+        """Generate human-readable reasoning for the match"""
+        if not best_match:
+            return "No suitable match found in knowledge base or supplier BOM"
+
+        match_source = best_match.get('match_source', 'unknown')
+        confidence = best_match.get('confidence_score', 0)
+        match_type = best_match.get('match_type', 'unknown')
+
+        if match_source == 'knowledge_base':
+            if match_type == 'exact':
+                return f"Exact match found in knowledge base from previous workflow (confidence: {confidence:.1%})"
+            else:
+                return f"Similar item found in knowledge base (confidence: {confidence:.1%})"
+        elif match_source == 'supplier_bom':
+            return f"Match found in current supplier BOM (confidence: {confidence:.1%})"
+        elif match_source == 'hybrid':
+            return f"Match verified through both knowledge base and supplier BOM (confidence: {confidence:.1%})"
+
+        return f"Match found with {confidence:.1%} confidence"
+</file>
+
+<file path="backend/database/knowledge_base.py">
+import sqlite3
+import json
+from typing import List, Dict, Optional, Tuple
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
+class KnowledgeBase:
+    def __init__(self, db_path: str = "knowledge_base.db"):
+        self.db_path = db_path
+        self.init_database()
+
+    def init_database(self):
+        """Initialize the knowledge base database with required tables"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            # Items table for storing previously processed items
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    material_name TEXT NOT NULL,
+                    normalized_name TEXT NOT NULL,
+                    part_number TEXT,
+                    vendor_name TEXT,
+                    classification_label INTEGER,
+                    classification_confidence TEXT,
+                    qc_process_step TEXT,
+                    unit_of_measure TEXT,
+                    quantity TEXT,
+                    consumable_jigs_tools BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    workflow_id TEXT,
+                    source_document TEXT,
+                    qa_excerpt TEXT,
+                    category TEXT
+                )
+            ''')
+
+            # Item matches table for storing successful matches
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS item_matches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    original_item_id INTEGER,
+                    matched_item_id INTEGER,
+                    confidence_score REAL,
+                    match_type TEXT,
+                    supplier_description TEXT,
+                    supplier_part_number TEXT,
+                    reasoning TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    workflow_id TEXT,
+                    FOREIGN KEY (original_item_id) REFERENCES items (id),
+                    FOREIGN KEY (matched_item_id) REFERENCES items (id)
+                )
+            ''')
+
+            # Create indexes for faster queries
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_material_name ON items(normalized_name)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_part_number ON items(part_number)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_workflow_id ON items(workflow_id)')
+
+            conn.commit()
+            conn.close()
+            logger.info("Knowledge base database initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize knowledge base: {e}")
+
+    def normalize_material_name(self, material_name: str) -> str:
+        """Normalize material name for better matching"""
+        if not material_name:
+            return ""
+
+        # Convert to lowercase, remove extra spaces, remove special characters
+        normalized = material_name.lower().strip()
+        # Add more normalization rules as needed
+        normalized = ''.join(char for char in normalized if char.isalnum() or char.isspace())
+        normalized = ' '.join(normalized.split())  # Remove multiple spaces
+
+        return normalized
+
+    def add_items(self, items: List[Dict], workflow_id: str, source_document: str = None) -> List[int]:
+        """Add new items to the knowledge base"""
+        if not items:
+            return []
+
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            added_ids = []
+
+            for item in items:
+                normalized_name = self.normalize_material_name(item.get('qa_material_name', ''))
+
+                cursor.execute('''
+                    INSERT INTO items (
+                        material_name, normalized_name, part_number, vendor_name,
+                        classification_label, classification_confidence, qc_process_step,
+                        unit_of_measure, quantity, consumable_jigs_tools, workflow_id, 
+                        source_document, qa_excerpt, category
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    item.get('qa_material_name', ''),
+                    normalized_name,
+                    item.get('part_number'),
+                    item.get('vendor_name'),
+                    item.get('qa_classification_label'),
+                    item.get('qa_confidence_level'),
+                    item.get('qc_process_step'),
+                    item.get('unit_of_measure'),
+                    item.get('quantity'),
+                    item.get('consumable_jigs_tools', False),
+                    workflow_id,
+                    source_document,
+                    item.get('qa_excerpt', ''),
+                    item.get('category', '')
+                ))
+
+                added_ids.append(cursor.lastrowid)
+
+            conn.commit()
+            conn.close()
+
+            return added_ids
+        except Exception as e:
+            logger.error(f"Failed to add items to knowledge base: {e}")
+            return []
+
+    def find_similar_items(self, material_name: str, part_number: str = None, threshold: float = 0.7) -> List[Dict]:
+        """Find similar items in the knowledge base"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            normalized_query = self.normalize_material_name(material_name)
+
+            # Try exact match first
+            results = []
+            if normalized_query:
+                cursor.execute('''
+                    SELECT * FROM items 
+                    WHERE normalized_name = ? 
+                    ORDER BY created_at DESC
+                    LIMIT 5
+                ''', (normalized_query,))
+                exact_matches = cursor.fetchall()
+
+                # Convert to dictionaries
+                columns = [
+                    'id', 'material_name', 'normalized_name', 'part_number', 'vendor_name',
+                    'classification_label', 'classification_confidence', 'qc_process_step',
+                    'unit_of_measure', 'quantity', 'consumable_jigs_tools', 'created_at', 'updated_at',
+                    'workflow_id', 'source_document', 'qa_excerpt', 'category'
+                ]
+
+                for match in exact_matches:
+                    item_dict = dict(zip(columns, match))
+                    item_dict['match_type'] = 'exact'
+                    item_dict['confidence_score'] = 1.0
+                    results.append(item_dict)
+
+            conn.close()
+            return results
+
+        except Exception as e:
+            logger.error(f"Failed to find similar items: {e}")
+            return []
+
+    def get_processing_stats(self) -> Dict:
+        """Get statistics about items processed"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT COUNT(*) FROM items')
+            total_items = cursor.fetchone()[0]
+
+            cursor.execute('SELECT COUNT(DISTINCT workflow_id) FROM items WHERE workflow_id IS NOT NULL')
+            total_workflows = cursor.fetchone()[0]
+
+            cursor.execute('SELECT COUNT(*) FROM item_matches')
+            total_matches = cursor.fetchone()[0]
+
+            cursor.execute('SELECT COUNT(DISTINCT original_item_id) FROM item_matches')
+            unique_matched_items = cursor.fetchone()[0]
+
+            conn.close()
+
+            return {
+                'total_items': total_items,
+                'total_workflows': total_workflows,
+                'total_matches': total_matches,
+                'unique_matched_items': unique_matched_items,
+                'match_rate': (unique_matched_items / total_items * 100) if total_items > 0 else 0
+            }
+        except Exception as e:
+            logger.error(f"Error getting stats: {e}")
+            return {
+                'total_items': 0,
+                'total_workflows': 0,
+                'total_matches': 0,
+                'unique_matched_items': 0,
+                'match_rate': 0
+            }
+
+    def clear_all_data(self):
+        """Clear all data from knowledge base"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('DELETE FROM item_matches')
+            cursor.execute('DELETE FROM items')
+
+            conn.commit()
+            conn.close()
+            logger.info("Knowledge base cleared successfully")
+        except Exception as e:
+            logger.error(f"Failed to clear knowledge base: {e}")
+</file>
+
+<file path="backend/routers/__init__.py">
+# Routers package initialization
+</file>
+
+<file path="backend/routers/autonomous.py">
+from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi.responses import JSONResponse
+from typing import Dict, Optional
+import logging
+import asyncio
+from datetime import datetime
+import uuid
+import aiofiles
+import os
+from pathlib import Path
+
+from ..agents.agent_orchestrator import AgentOrchestrator
+from ..database.knowledge_base import KnowledgeBase
+from ..utils.gemini_client import GeminiClient
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/autonomous", tags=["autonomous"])
+
+# Initialize services
+try:
+    gemini_client = GeminiClient()
+    orchestrator = AgentOrchestrator(gemini_client)
+    knowledge_base = KnowledgeBase()
+    logger.info("Autonomous router initialized successfully")
+except Exception as e:
+    logger.warning(f"Failed to initialize services: {e}")
+    orchestrator = None
+    knowledge_base = None
+
+# In-memory storage for workflows (in production, use database)
+workflows = {}
+results_storage = {}
+
+@router.post("/upload")
+async def upload_documents(
+    background_tasks: BackgroundTasks,
+    wi_document: UploadFile = File(...),
+    item_master: UploadFile = File(...)
+):
+    """Upload and start processing WI/QC document and Item Master"""
+    try:
+        # Validate file formats
+        if not wi_document.filename.lower().endswith(('.pdf', '.docx', '.doc', '.txt')):
+            raise HTTPException(status_code=400, detail="WI document must be PDF, DOCX, DOC, or TXT format")
+
+        if not item_master.filename.lower().endswith(('.xlsx', '.xls', '.csv')):
+            raise HTTPException(status_code=400, detail="Item Master must be XLSX, XLS, or CSV format")
+
+        # Create workflow
+        workflow_id = str(uuid.uuid4())
+        workflows[workflow_id] = {
+            "workflow_id": workflow_id,
+            "status": "initialized",
+            "current_stage": "upload",
+            "progress": 0,
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+            "message": "Documents uploaded successfully"
+        }
+
+        # Save uploaded files temporarily
+        upload_dir = Path("uploads")
+        upload_dir.mkdir(exist_ok=True)
+
+        wi_path = upload_dir / wi_document.filename
+        item_path = upload_dir / item_master.filename
+
+        async with aiofiles.open(wi_path, 'wb') as f:
+            content = await wi_document.read()
+            await f.write(content)
+
+        async with aiofiles.open(item_path, 'wb') as f:
+            content = await item_master.read()
+            await f.write(content)
+
+        # Start processing in background
+        background_tasks.add_task(
+            process_documents_background,
+            workflow_id,
+            str(wi_path),
+            str(item_path)
+        )
+
+        return JSONResponse({
+            "success": True,
+            "workflow_id": workflow_id,
+            "message": "Documents uploaded successfully. Processing started."
+        })
+
+    except Exception as e:
+        logger.error(f"Upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+async def process_documents_background(workflow_id: str, wi_path: str, item_path: str):
+    """Background task to process documents"""
+    try:
+        # Update workflow status
+        workflows[workflow_id].update({
+            "status": "processing",
+            "current_stage": "translation",
+            "message": "Starting document processing with knowledge base integration",
+            "progress": 10,
+            "updated_at": datetime.utcnow().isoformat()
+        })
+
+        if orchestrator:
+            # Process using orchestrator with corrected async callback
+            results = await orchestrator.process_documents_enhanced(
+                wi_path,
+                item_path,
+                workflow_id,
+                progress_callback=lambda stage, progress, message: asyncio.create_task(
+                    update_workflow_progress(workflow_id, stage, progress, message)
+                )
+            )
+        else:
+            # Mock results for demo
+            await asyncio.sleep(5)  # Simulate processing time
+            results = {
+                "workflow_id": workflow_id,
+                "matches": [
+                    {
+                        "qa_material_name": "Sample Material",
+                        "qa_excerpt": "Sample excerpt from document",
+                        "qa_classification_label": 1,
+                        "qa_confidence_level": "high",
+                        "confidence_score": 0.85,
+                        "supplier_description": "Matched supplier item",
+                        "reasoning": "Demonstration match"
+                    }
+                ],
+                "summary": {
+                    "total_materials": 1,
+                    "successful_matches": 1,
+                    "knowledge_base_matches": 0
+                },
+                "knowledge_base_stats": knowledge_base.get_processing_stats() if knowledge_base else {}
+            }
+
+        # Store results
+        results_storage[workflow_id] = results
+
+        workflows[workflow_id].update({
+            "status": "completed",
+            "current_stage": "completed",
+            "message": "Processing completed successfully",
+            "progress": 100,
+            "updated_at": datetime.utcnow().isoformat()
+        })
+
+        # Cleanup temporary files
+        try:
+            if os.path.exists(wi_path):
+                os.remove(wi_path)
+            if os.path.exists(item_path):
+                os.remove(item_path)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup files: {e}")
+
+        logger.info(f"Workflow {workflow_id} completed successfully")
+
+    except Exception as e:
+        logger.error(f"Processing failed for workflow {workflow_id}: {str(e)}")
+        workflows[workflow_id].update({
+            "status": "error",
+            "current_stage": "error",
+            "message": f"Processing failed: {str(e)}",
+            "progress": 0,
+            "updated_at": datetime.utcnow().isoformat()
+        })
+
+async def update_workflow_progress(workflow_id: str, stage: str, progress: float, message: str):
+    """Update workflow progress - NOW ASYNC"""
+    if workflow_id in workflows:
+        workflows[workflow_id].update({
+            "current_stage": stage,
+            "progress": progress,
+            "message": message,
+            "updated_at": datetime.utcnow().isoformat()
+        })
+
+@router.get("/workflow/{workflow_id}/status")
+async def get_workflow_status(workflow_id: str):
+    """Get workflow status"""
+    try:
+        if workflow_id not in workflows:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        return workflows[workflow_id]
+    except Exception as e:
+        logger.error(f"Failed to get workflow status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/workflow/{workflow_id}/results")
+async def get_results(workflow_id: str):
+    """Get workflow results"""
+    try:
+        if workflow_id not in results_storage:
+            raise HTTPException(status_code=404, detail="Results not found")
+
+        return results_storage[workflow_id]
+    except Exception as e:
+        logger.error(f"Failed to get results: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/workflows")
+async def list_workflows():
+    """List all workflows"""
+    try:
+        return {"workflows": list(workflows.values())}
+    except Exception as e:
+        logger.error(f"Failed to list workflows: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+</file>
+
+<file path="backend/routers/knowledge_base.py">
+from fastapi import APIRouter, HTTPException
+from typing import Dict, Optional
+import logging
+
+from ..database.knowledge_base import KnowledgeBase
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/knowledge-base", tags=["knowledge-base"])
+
+# Initialize knowledge base
+try:
+    knowledge_base = KnowledgeBase()
+    logger.info("Knowledge base router initialized successfully")
+except Exception as e:
+    logger.warning(f"Failed to initialize knowledge base: {e}")
+    knowledge_base = None
+
+@router.get("/stats")
+async def get_knowledge_base_stats():
+    """Get knowledge base statistics"""
+    try:
+        if knowledge_base:
+            return knowledge_base.get_processing_stats()
+        else:
+            return {
+                "total_items": 0,
+                "total_workflows": 0,
+                "total_matches": 0,
+                "unique_matched_items": 0,
+                "match_rate": 0
+            }
+    except Exception as e:
+        logger.error(f"Failed to get knowledge base stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+</file>
+
+<file path="backend/services/__init__.py">
+# Services package initialization
+</file>
+
+<file path="backend/utils/__init__.py">
+# Utils package initialization
+</file>
+
+<file path="backend/utils/gemini_client.py">
+"""
+Enhanced Gemini Client with API key authentication for autonomous agents
+"""
+
+import os
+import json
+import logging
+import asyncio
+import aiohttp
+
+logger = logging.getLogger(__name__)
+
+class GeminiClient:
+    def __init__(self):
+        self.api_key = os.getenv("GEMINI_API_KEY")
+        self.base_url = "https://api.ai-gateway.tigeranalytics.com/chat/completions"
+        self.model_name = "gemini-2.0-flash"
+        if not self.api_key or self.api_key == "your_gemini_api_key_here":
+            logger.warning("GEMINI_API_KEY not configured. Client will return mock responses.")
+
+    async def generate_content_async(self, prompt: str, temperature: float = 0.7, max_tokens: int = 1000) -> str:
+            # Just call the existing async generate_content method
+            return await self.generate_content(prompt, temperature=temperature, max_tokens=max_tokens)
+
+    async def generate_content(self, prompt: str, temperature: float = 0.7, max_tokens: int = 1000) -> str:
+        """Generate content using Tiger Analytics Gemini chat completions API"""
+        if not self.api_key or self.api_key == "your_gemini_api_key_here":
+            logger.debug("API key missing; returning mock response")
+            return f"Mock response for prompt: {prompt[:100]}... (Configure GEMINI_API_KEY for real AI processing)"
+
+        url = self.base_url
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        # Expect response like: {"choices": [{"message": {"content": "response text"}}], ...}
+                        if "choices" in data and len(data["choices"]) > 0:
+                            message = data["choices"][0].get("message")
+                            if message and "content" in message:
+                                return message["content"]
+                        logger.warning("Unexpected Gemini API response structure")
+                        return "Unable to parse Gemini response"
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Gemini API error {response.status}: {error_text}")
+                        return f"API Error {response.status}: {error_text}"
+        except asyncio.TimeoutError:
+            logger.error("Gemini API request timed out")
+            return "Request timed out - please try again"
+        except Exception as e:
+            logger.error(f"Error calling Gemini API: {e}")
+            return f"API Error: {str(e)}"
+
+    async def translate(self, text: str, source: str = "ja", target: str = "en") -> str:
+        """Use chat completion to perform translation"""
+        prompt = (
+            f"Translate the following {source} text to {target}, preserving technical and part number details:\n\n"
+            f"{text}"
+        )
+        return await self.generate_content(prompt, temperature=0.1, max_tokens=1500)
+
+    def is_available(self) -> bool:
+        """Check if Gemini API key is configured"""
+        return bool(self.api_key and self.api_key != "your_gemini_api_key_here")
+</file>
+
+<file path="backend/__init__.py">
+# Backend package initialization
+</file>
+
+<file path="backend/main.py">
+"""
+Enhanced Autonomous BOM Comparison Platform - Main FastAPI Application with QA Classification and Knowledge Base
+"""
+
+import asyncio
+import json
+import logging
+import os
+import uuid
+from dotenv import load_dotenv
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Optional
+
+import aiofiles
+import uvicorn
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+
+from .agents.agent_orchestrator import AgentOrchestrator
+from .routers import autonomous, knowledge_base
+from .utils.gemini_client import GeminiClient
+
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="Enhanced Autonomous BOM Comparison Platform",
+    description="AI-powered BOM comparison with QA classification and Knowledge Base integration",
+    version="2.0.0"
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(autonomous.router)
+app.include_router(knowledge_base.router)
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "2.0.0",
+        "features": {
+            "qa_classification": True,
+            "knowledge_base": True,
+            "japanese_translation": True
+        }
+    }
+
+# Simple route for testing
+@app.get("/")
+async def root():
+    return {"message": "Enhanced Autonomous BOM Platform API", "version": "2.0.0"}
+
+if __name__ == "__main__":
+    # Ensure required directories exist
+    Path("uploads").mkdir(exist_ok=True)
+    Path("results").mkdir(exist_ok=True)
+
+    # Start the server
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0", 
+        port=int(os.getenv("PORT", 8000)),
+        reload=True,
+        log_level="info"
+    )
+</file>
+
+<file path="backend/requirements.txt">
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+aiofiles==23.2.1
+pandas==2.1.3
+openpyxl==3.1.2
+PyPDF2==3.0.1
+python-docx==1.1.0
+python-jose==3.3.0
+python-dotenv==1.0.0
+websockets==12.0
+google-generativeai==0.3.1
+openai==1.3.7
+pydantic==2.5.0
+pydantic-settings==2.1.0
+</file>
+
+<file path="frontend/src/components/LanguageSwitcher.jsx">
+import React from 'react'
+import { Globe } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
+
+export default function LanguageSwitcher({ className = '' }) {
+  const { currentLanguage, changeLanguage, availableLanguages } = useTranslation()
+
+  return (
+    <div className={`relative inline-block ${className}`}>
+      <select
+        value={currentLanguage}
+        onChange={(e) => changeLanguage(e.target.value)}
+        className="appearance-none bg-white border border-gray-300 rounded-md py-2 pl-3 pr-8 text-sm leading-5 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+      >
+        {availableLanguages.map((lang) => (
+          <option key={lang.code} value={lang.code}>
+            {lang.nativeName}
+          </option>
+        ))}
+      </select>
+      <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+        <Globe className="h-4 w-4 text-gray-400" />
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/components/Layout.jsx">
+import React from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
+import { Home, Upload, BarChart, Database, Settings } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
+import LanguageSwitcher from './LanguageSwitcher'
+
+export default function Layout({ children }) {
+  const location = useLocation()
+  const { t } = useTranslation()
+
+  const navigation = [
+    { name: t('navigation.dashboard'), href: '/dashboard', icon: Home },
+    { name: t('navigation.upload'), href: '/upload', icon: Upload },
+    { name: t('knowledgeBase.title'), href: '/knowledge-base', icon: Database },
+    { name: t('settings.title'), href: '/settings', icon: Settings },
+  ]
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Navigation */}
+      <nav className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16">
+            <div className="flex">
+              <div className="flex-shrink-0 flex items-center">
+                <BarChart className="h-8 w-8 text-primary-600" />
+                <span className="ml-2 text-xl font-bold text-gray-900">
+                  BOM Platform
+                </span>
+                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                  Enhanced v2.0
+                </span>
+              </div>
+              <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
+                {navigation.map((item) => {
+                  const Icon = item.icon
+                  const isActive = location.pathname === item.href
+                  return (
+                    <NavLink
+                      key={item.name}
+                      to={item.href}
+                      className={`${
+                        isActive
+                          ? 'border-primary-500 text-primary-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                    >
+                      <Icon className="h-4 w-4 mr-2" />
+                      {item.name}
+                    </NavLink>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Language Switcher */}
+            <div className="flex items-center">
+              <LanguageSwitcher className="mr-4" />
+              <div className="hidden sm:flex items-center space-x-4">
+                <span className="text-xs text-gray-500">
+                  QA Classification • Knowledge Base • Japanese Support
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* Main content */}
+      <main className="min-h-screen">
+        {children}
+      </main>
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/components/UI.jsx">
+import React from 'react'
+
+// Card component - PROPERLY EXPORTED
+export function Card({ children, className = '', ...props }) {
+  return (
+    <div 
+      className={`bg-white shadow-sm rounded-lg border border-gray-200 ${className}`}
+      {...props}
+    >
+      {children}
+    </div>
+  )
+}
+
+// Button component
+export function Button({ 
+  children, 
+  variant = 'primary', 
+  size = 'md', 
+  className = '', 
+  disabled = false,
+  ...props 
+}) {
+  const baseClasses = 'inline-flex items-center font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors'
+
+  const variantClasses = {
+    primary: 'bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500',
+    secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500',
+    outline: 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 focus:ring-primary-500',
+    danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500'
+  }
+
+  const sizeClasses = {
+    sm: 'px-3 py-2 text-sm',
+    md: 'px-4 py-2 text-sm',
+    lg: 'px-6 py-3 text-base'
+  }
+
+  const disabledClasses = disabled ? 'opacity-50 cursor-not-allowed' : ''
+
+  return (
+    <button
+      className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${disabledClasses} ${className}`}
+      disabled={disabled}
+      {...props}
+    >
+      {children}
+    </button>
+  )
+}
+
+// Loading spinner component
+export function LoadingSpinner({ size = 'md', className = '' }) {
+  const sizeClasses = {
+    sm: 'h-4 w-4',
+    md: 'h-6 w-6', 
+    lg: 'h-8 w-8'
+  }
+
+  return (
+    <div className={`animate-spin rounded-full border-2 border-primary-600 border-t-transparent ${sizeClasses[size]} ${className}`}></div>
+  )
+}
+
+// Export all components
+export default {
+  Card,
+  Button,
+  LoadingSpinner
+}
+</file>
+
+<file path="frontend/src/hooks/useTranslation.jsx">
+import React, { createContext, useContext, useState, useEffect } from 'react'
+
+const TranslationContext = createContext()
+
+// Embedded translations to avoid import issues
+const TRANSLATIONS = {
+  en: {
+    "common": {
+      "loading": "Loading...",
+      "error": "Error",
+      "success": "Success",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "save": "Save",
+      "delete": "Delete",
+      "edit": "Edit",
+      "view": "View",
+      "download": "Download",
+      "upload": "Upload",
+      "search": "Search",
+      "filter": "Filter",
+      "export": "Export",
+      "back": "Back",
+      "next": "Next",
+      "previous": "Previous",
+      "close": "Close",
+      "yes": "Yes",
+      "no": "No",
+      "clear": "Clear",
+      "actions": "Actions",
+      "created": "Created",
+      "to": "to"
+    },
+    "navigation": {
+      "dashboard": "Dashboard",
+      "upload": "Upload",
+      "processing": "Processing",
+      "results": "Results"
+    },
+    "results": {
+      "title": "BOM Comparison Results",
+      "workflowId": "Workflow ID",
+      "withItemClassificationReasons": "With Item Classification & Reasons",
+      "backToDashboard": "Back to Dashboard",
+      "materialsProcessed": "Materials Processed",
+      "successfulMatches": "Successful Matches",
+      "averageConfidence": "Average Confidence",
+      "knowledgeBaseMatches": "Knowledge Base Matches",
+      "exportResults": "Export Results",
+      "resultsExported": "Results exported successfully!",
+      "failedToLoadResults": "The results for this workflow could not be loaded.",
+      "noMaterialsMatch": "No materials match the selected filter criteria.",
+      "noReasonProvided": "No reason provided",
+      "columns": {
+        "sno": "S.No.",
+        "materialName": "Material Name", 
+        "qcProcess": "QC Process/WI Step",
+        "consumable": "Consumable/Jigs/Tools",
+        "partNumber": "Part Number",
+        "qty": "Qty",
+        "uom": "UoM",
+        "vendor": "Vendor",
+        "classification": "Classification",
+        "confidence": "Confidence",
+        "actionPath": "Action Path",
+        "supplierMatch": "Supplier Match",
+        "reason": "Reason"
+      }
+    },
+    "knowledgeBase": {
+      "title": "Knowledge Base",
+      "subtitle": "Database of previously processed items for enhanced matching accuracy",
+      "totalItems": "Total Items",
+      "totalWorkflows": "Total Workflows",
+      "totalMatches": "Total Matches",
+      "matchRate": "Match Rate",
+      "searchItems": "Search items in knowledge base...",
+      "noItems": "No items found",
+      "noItemsDescription": "No items match your search criteria."
+    },
+    "dashboard": {
+      "title": "Dashboard",
+      "subtitle": "Monitor your autonomous BOM processing workflows with QA classification",
+      "showing": "Showing",
+      "of": "of",
+      "startProcessing": "Start Processing"
+    },
+    "settings": {
+      "title": "Settings",
+      "language": "Language Settings",
+      "resultsLanguage": "Results Display Language",
+      "resultsLanguageDescription": "Choose the language for displaying BOM comparison results",
+      "knowledgeBase": "Knowledge Base Settings",
+      "enableKnowledgeBase": "Enable Knowledge Base",
+      "knowledgeBaseDescription": "Use historical data to improve matching accuracy",
+      "clearKnowledgeBase": "Clear Knowledge Base",
+      "clearKnowledgeBaseDescription": "Remove all stored historical data",
+      "confirmClear": "Are you sure you want to clear all knowledge base data?"
+    }
+  },
+  ja: {
+    "common": {
+      "loading": "読み込み中...",
+      "error": "エラー",
+      "success": "成功",
+      "cancel": "キャンセル",
+      "confirm": "確認",
+      "save": "保存",
+      "delete": "削除",
+      "edit": "編集",
+      "view": "表示",
+      "download": "ダウンロード",
+      "upload": "アップロード",
+      "search": "検索",
+      "filter": "フィルター",
+      "export": "エクスポート",
+      "back": "戻る",
+      "next": "次へ",
+      "previous": "前へ",
+      "close": "閉じる",
+      "yes": "はい",
+      "no": "いいえ",
+      "clear": "クリア",
+      "actions": "操作",
+      "created": "作成日",
+      "to": "から"
+    },
+    "navigation": {
+      "dashboard": "ダッシュボード",
+      "upload": "アップロード",
+      "processing": "処理中",
+      "results": "結果"
+    },
+    "results": {
+      "title": "BOM比較結果",
+      "workflowId": "ワークフローID",
+      "withItemClassificationReasons": "アイテム分類と理由付き",
+      "backToDashboard": "ダッシュボードに戻る",
+      "materialsProcessed": "処理済み材料",
+      "successfulMatches": "成功マッチ",
+      "averageConfidence": "平均信頼度",
+      "knowledgeBaseMatches": "知識ベースマッチ",
+      "exportResults": "結果エクスポート",
+      "resultsExported": "結果が正常にエクスポートされました！",
+      "failedToLoadResults": "このワークフローの結果を読み込めませんでした。",
+      "noMaterialsMatch": "選択されたフィルター条件に一致する材料はありません。",
+      "noReasonProvided": "理由が提供されていません",
+      "columns": {
+        "sno": "番号",
+        "materialName": "材料名",
+        "qcProcess": "QCプロセス/WIステップ",
+        "consumable": "消耗品/治具/工具",
+        "partNumber": "部品番号",
+        "qty": "数量",
+        "uom": "単位",
+        "vendor": "ベンダー",
+        "classification": "分類",
+        "confidence": "信頼度",
+        "actionPath": "アクションパス",
+        "supplierMatch": "サプライヤーマッチ",
+        "reason": "理由"
+      }
+    },
+    "knowledgeBase": {
+      "title": "知識ベース",
+      "subtitle": "マッチング精度向上のための過去処理アイテムデータベース",
+      "totalItems": "総アイテム数",
+      "totalWorkflows": "総ワークフロー数",
+      "totalMatches": "総マッチ数",
+      "matchRate": "マッチ率",
+      "searchItems": "知識ベース内のアイテムを検索...",
+      "noItems": "アイテムが見つかりません",
+      "noItemsDescription": "検索条件に一致するアイテムはありません。"
+    },
+    "dashboard": {
+      "title": "ダッシュボード",
+      "subtitle": "QA分類機能付きの自律的BOM処理ワークフローを監視",
+      "showing": "表示中",
+      "of": "/",
+      "startProcessing": "処理開始"
+    },
+    "settings": {
+      "title": "設定",
+      "language": "言語設定",
+      "resultsLanguage": "結果表示言語",
+      "resultsLanguageDescription": "BOM比較結果の表示言語を選択してください",
+      "knowledgeBase": "知識ベース設定",
+      "enableKnowledgeBase": "知識ベースを有効化",
+      "knowledgeBaseDescription": "過去のデータを使用してマッチング精度を向上させる",
+      "clearKnowledgeBase": "知識ベースをクリア",
+      "clearKnowledgeBaseDescription": "保存されたすべての過去データを削除",
+      "confirmClear": "すべての知識ベースデータをクリアしてもよろしいですか？"
+    }
+  }
+}
+
+export function TranslationProvider({ children }) {
+  const [currentLanguage, setCurrentLanguage] = useState('en')
+  const [loading, setLoading] = useState(false)
+
+  const changeLanguage = (language) => {
+    setCurrentLanguage(language)
+    try {
+      localStorage?.setItem('preferred-language', language)
+    } catch (e) {
+      // localStorage not available
+    }
+  }
+
+  const t = (key, fallback = key) => {
+    const keys = key.split('.')
+    let value = TRANSLATIONS[currentLanguage]
+
+    for (const k of keys) {
+      value = value?.[k]
+      if (value === undefined) {
+        // Try English fallback
+        value = TRANSLATIONS.en
+        for (const k of keys) {
+          value = value?.[k]
+          if (value === undefined) {
+            console.warn(`Translation key not found: ${key}`)
+            return fallback
+          }
+        }
+        break
+      }
+    }
+
+    return value || fallback
+  }
+
+  const value = {
+    currentLanguage,
+    changeLanguage,
+    t,
+    loading,
+    availableLanguages: [
+      { code: 'en', name: 'English', nativeName: 'English' },
+      { code: 'ja', name: 'Japanese', nativeName: '日本語' }
+    ]
+  }
+
+  return (
+    <TranslationContext.Provider value={value}>
+      {children}
+    </TranslationContext.Provider>
+  )
+}
+
+export function useTranslation() {
+  const context = useContext(TranslationContext)
+  if (context === undefined) {
+    throw new Error('useTranslation must be used within a TranslationProvider')
+  }
+  return context
+}
+</file>
+
+<file path="frontend/src/pages/Dashboard.jsx">
+import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Upload, Play, CheckCircle, TrendingUp, Database } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
+import { Card, Button } from '../components/UI'
+
+export default function Dashboard() {
+  const navigate = useNavigate()
+  const { t } = useTranslation()
+  const [workflows, setWorkflows] = useState([])
+  const [stats, setStats] = useState({
+    total: 0,
+    completed: 0,
+    processing: 0,
+    success_rate: 0
+  })
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadDashboardData()
+  }, [])
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true)
+      // Mock data for demonstration
+      setWorkflows([
+        {
+          workflow_id: 'wf-001',
+          status: 'completed',
+          created_at: new Date().toISOString(),
+          message: 'Processing completed successfully'
+        }
+      ])
+      setStats({
+        total: 1,
+        completed: 1,
+        processing: 0,
+        success_rate: 100
+      })
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">{t('common.loading')}</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto p-6">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">{t('dashboard.title')}</h1>
+          <p className="text-gray-600 mt-1">{t('dashboard.subtitle')}</p>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Database className="h-5 w-5 text-blue-600" />
+                </div>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Total Workflows</p>
+                <p className="text-2xl font-semibold text-gray-900">{stats.total}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                </div>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Completed</p>
+                <p className="text-2xl font-semibold text-gray-900">{stats.completed}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                  <Play className="h-5 w-5 text-yellow-600" />
+                </div>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Processing</p>
+                <p className="text-2xl font-semibold text-gray-900">{stats.processing}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <TrendingUp className="h-5 w-5 text-purple-600" />
+                </div>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Success Rate</p>
+                <p className="text-2xl font-semibold text-gray-900">{stats.success_rate}%</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Action Button */}
+        <div className="mb-8">
+          <Button 
+            onClick={() => navigate('/upload')}
+            className="btn-primary"
+          >
+            <Upload className="h-5 w-5 mr-2" />
+            {t('dashboard.startProcessing')}
+          </Button>
+        </div>
+
+        {/* Recent Workflows */}
+        <Card>
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h3 className="text-lg font-medium text-gray-900">Recent Workflows</h3>
+          </div>
+          <div className="p-6">
+            {workflows.length > 0 ? (
+              <div className="space-y-4">
+                {workflows.map((workflow) => (
+                  <div key={workflow.workflow_id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                    <div>
+                      <h4 className="font-medium text-gray-900">{workflow.workflow_id}</h4>
+                      <p className="text-sm text-gray-500">{workflow.message}</p>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        workflow.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {workflow.status}
+                      </span>
+                      {workflow.status === 'completed' && (
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => navigate(`/results/${workflow.workflow_id}`)}
+                        >
+                          View Results
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-gray-500">No workflows yet. Start by uploading your first document.</p>
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/pages/KnowledgeBase.jsx">
+import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Database, ArrowLeft } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
+import { Card } from '../components/UI'
+
+export default function KnowledgeBase() {
+  const navigate = useNavigate()
+  const { t } = useTranslation()
+  const [stats, setStats] = useState({
+    total_items: 0,
+    total_workflows: 0,
+    total_matches: 0,
+    match_rate: 0
+  })
+
+  useEffect(() => {
+    // Mock data for demonstration
+    setStats({
+      total_items: 0,
+      total_workflows: 0,
+      total_matches: 0,
+      match_rate: 0
+    })
+  }, [])
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto p-6">
+        {/* Header */}
+        <div className="mb-8">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4"
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back to Dashboard
+          </button>
+          <h1 className="text-3xl font-bold text-gray-900">{t('knowledgeBase.title')}</h1>
+          <p className="text-gray-600 mt-1">{t('knowledgeBase.subtitle')}</p>
+        </div>
+
+        {/* Statistics */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card className="p-6">
+            <div className="flex items-center">
+              <Database className="h-8 w-8 text-blue-600" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">{t('knowledgeBase.totalItems')}</p>
+                <p className="text-2xl font-semibold text-gray-900">{stats.total_items}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="h-8 w-8 bg-green-100 rounded-lg flex items-center justify-center">
+                <span className="text-green-600 font-semibold">📋</span>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">{t('knowledgeBase.totalWorkflows')}</p>
+                <p className="text-2xl font-semibold text-gray-900">{stats.total_workflows}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="h-8 w-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                <span className="text-purple-600 font-semibold">🔗</span>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">{t('knowledgeBase.totalMatches')}</p>
+                <p className="text-2xl font-semibold text-gray-900">{stats.total_matches}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="h-8 w-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                <span className="text-yellow-600 font-semibold">📊</span>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">{t('knowledgeBase.matchRate')}</p>
+                <p className="text-2xl font-semibold text-gray-900">{stats.match_rate}%</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/pages/Processing.jsx">
+import React, { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { ArrowLeft, CheckCircle, Clock } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
+import { Card, LoadingSpinner } from '../components/UI'
+
+export default function Processing() {
+  const { workflowId } = useParams()
+  const navigate = useNavigate()
+  const { t } = useTranslation()
+  const [workflow, setWorkflow] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (workflowId) {
+      // Poll for workflow status
+      const interval = setInterval(() => {
+        checkWorkflowStatus()
+      }, 2000)
+
+      checkWorkflowStatus()
+
+      return () => clearInterval(interval)
+    }
+  }, [workflowId])
+
+  const checkWorkflowStatus = async () => {
+    try {
+      const response = await fetch(`/api/autonomous/workflow/${workflowId}/status`)
+      if (response.ok) {
+        const data = await response.json()
+        setWorkflow(data)
+
+        if (data.status === 'completed') {
+          // Redirect to results after a short delay
+          setTimeout(() => {
+            navigate(`/results/${workflowId}`)
+          }, 1000)
+        } else if (data.status === 'error') {
+          setLoading(false)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check workflow status:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading && !workflow) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <LoadingSpinner size="lg" className="mx-auto mb-4" />
+          <p className="text-gray-600">{t('common.loading')}</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-4xl mx-auto p-6">
+        {/* Header */}
+        <div className="mb-8">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4"
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back to Dashboard
+          </button>
+          <h1 className="text-3xl font-bold text-gray-900">{t('navigation.processing')}</h1>
+          <p className="text-gray-600 mt-1">
+            Workflow ID: {workflowId}
+          </p>
+        </div>
+
+        {workflow && (
+          <Card className="p-8">
+            <div className="text-center">
+              {workflow.status === 'completed' ? (
+                <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-4" />
+              ) : workflow.status === 'error' ? (
+                <div className="mx-auto h-16 w-16 text-red-500 mb-4">❌</div>
+              ) : (
+                <LoadingSpinner size="lg" className="mx-auto mb-4" />
+              )}
+
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                {workflow.status === 'completed' ? 'Processing Complete!' :
+                 workflow.status === 'error' ? 'Processing Failed' :
+                 'Processing in Progress...'}
+              </h2>
+
+              <p className="text-gray-600 mb-6">
+                {workflow.message || 'Processing your documents...'}
+              </p>
+
+              <div className="bg-gray-200 rounded-full h-2 mb-4">
+                <div 
+                  className="bg-primary-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${workflow.progress || 0}%` }}
+                ></div>
+              </div>
+
+              <p className="text-sm text-gray-500">
+                Current Stage: {workflow.current_stage || 'initializing'}
+              </p>
+
+              {workflow.progress && (
+                <p className="text-sm text-gray-500 mt-1">
+                  {Math.round(workflow.progress)}% Complete
+                </p>
+              )}
+            </div>
+          </Card>
+        )}
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/pages/Results.jsx">
+import React, { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { ArrowLeft, Download, Database } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
+import { TranslationService } from '../services/translation'
+import { Card } from '../components/UI'
+import toast from 'react-hot-toast'
+
+export default function Results() {
+  const { workflowId } = useParams()
+  const navigate = useNavigate()
+  const { t, currentLanguage } = useTranslation()
+
+  const [results, setResults] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    const fetchResults = async () => {
+      try {
+        setLoading(true)
+        const response = await fetch(`/api/autonomous/workflow/${workflowId}/results`)
+        if (!response.ok) {
+          throw new Error('Failed to fetch results')
+        }
+        const data = await response.json()
+        setResults(data)
+      } catch (err) {
+        console.error('Error fetching results:', err)
+        setError(err.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (workflowId) {
+      fetchResults()
+    }
+  }, [workflowId])
+
+  const handleExportResults = async () => {
+    try {
+      const dataToExport = {
+        workflow_id: workflowId,
+        results: results,
+        export_date: new Date().toISOString(),
+        language: currentLanguage
+      }
+
+      const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `bom-results-${workflowId}-${currentLanguage}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      toast.success(t('results.resultsExported'))
+    } catch (error) {
+      console.error('Export failed:', error)
+      toast.error('Export failed')
+    }
+  }
+
+  const formatNumber = (num) => {
+    if (num === null || num === undefined || isNaN(num)) return '-'
+    const locale = currentLanguage === 'ja' ? 'ja-JP' : 'en-US'
+    return new Intl.NumberFormat(locale).format(num)
+  }
+
+  const formatPercentage = (value) => {
+    if (value === null || value === undefined || isNaN(value)) return '-'
+    const locale = currentLanguage === 'ja' ? 'ja-JP' : 'en-US'
+    return new Intl.NumberFormat(locale, {
+      style: 'percent',
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1
+    }).format(value / 100)
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">{t('common.loading')}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !results) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-8">
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
+            >
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              {t('results.backToDashboard')}
+            </button>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6 text-center">
+            <div className="text-red-600 mb-4">
+              <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+                <span className="text-2xl">⚠️</span>
+              </div>
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">{t('common.error')}</h3>
+            <p className="text-gray-600">{t('results.failedToLoadResults')}</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const matches = results.matches || []
+  const summary = results.summary || {}
+  const knowledgeBaseStats = results.knowledge_base_stats || {}
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto p-6">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4"
+              >
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                {t('results.backToDashboard')}
+              </button>
+              <h1 className="text-3xl font-bold text-gray-900">{t('results.title')}</h1>
+              <p className="text-gray-600 mt-1">
+                {t('results.workflowId')}: {workflowId} • {t('results.withItemClassificationReasons')}
+              </p>
+            </div>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={handleExportResults}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {t('results.exportResults')}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <span className="text-blue-600 font-semibold text-sm">📊</span>
+                </div>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">{t('results.materialsProcessed')}</p>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {formatNumber(summary.total_materials || 0)}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                  <span className="text-green-600 font-semibold text-sm">✅</span>
+                </div>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">{t('results.successfulMatches')}</p>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {formatNumber(summary.successful_matches || 0)}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                  <span className="text-yellow-600 font-semibold text-sm">📈</span>
+                </div>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">{t('results.averageConfidence')}</p>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {formatPercentage(
+                    matches.reduce((sum, m) => sum + (m.confidence_score || 0), 0) / matches.length || 0
+                  )}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <Database className="h-4 w-4 text-purple-600" />
+                </div>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">{t('results.knowledgeBaseMatches')}</p>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {formatNumber(summary.knowledge_base_matches || 0)}
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Results Table */}
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {t('results.columns.sno')}
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {t('results.columns.materialName')}
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {t('results.columns.qcProcess')}
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {t('results.columns.partNumber')}
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {t('results.columns.classification')}
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {t('results.columns.confidence')}
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {t('results.columns.supplierMatch')}
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {t('results.columns.reason')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {matches.length > 0 ? (
+                  matches.map((match, index) => {
+                    const actionPath = TranslationService.translateActionPath(match.qa_classification_label || 5, currentLanguage)
+
+                    return (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {index + 1}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-900">
+                          <div className="font-medium">{match.qa_material_name}</div>
+                          {match.qa_excerpt && (
+                            <div className="text-xs text-gray-500 mt-1">"{match.qa_excerpt}"</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {match.qc_process_step || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {match.part_number || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="flex items-center">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                              {t('results.columns.classification')} {match.qa_classification_label || 5}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {TranslationService.translateClassificationLabel(match.qa_classification_label || 5, currentLanguage)}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {TranslationService.translateConfidenceLevel(match.qa_confidence_level, currentLanguage)}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-900">
+                          {match.confidence_score > 0 ? (
+                            <div>
+                              <div className="font-medium">{match.supplier_description}</div>
+                              <div className="text-xs text-gray-500">
+                                {match.supplier_part_number} • {Math.round(match.confidence_score * 100)}%
+                              </div>
+                              <div className="text-xs text-blue-600 mt-1">
+                                {TranslationService.translateMatchSource(match.match_source, currentLanguage)}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">
+                          {match.reasoning || t('results.noReasonProvided')}
+                        </td>
+                      </tr>
+                    )
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="8" className="px-6 py-8 text-center text-gray-500">
+                      {t('results.noMaterialsMatch')}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        {/* Knowledge Base Stats */}
+        {knowledgeBaseStats && Object.keys(knowledgeBaseStats).length > 0 && (
+          <Card className="mt-8 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              {t('knowledgeBase.title')} {t('dashboard.showing')}
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">
+                  {formatNumber(knowledgeBaseStats.total_items || 0)}
+                </div>
+                <div className="text-sm text-gray-500">{t('knowledgeBase.totalItems')}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">
+                  {formatNumber(knowledgeBaseStats.total_workflows || 0)}
+                </div>
+                <div className="text-sm text-gray-500">{t('knowledgeBase.totalWorkflows')}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">
+                  {formatNumber(knowledgeBaseStats.total_matches || 0)}
+                </div>
+                <div className="text-sm text-gray-500">{t('knowledgeBase.totalMatches')}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">
+                  {formatPercentage(knowledgeBaseStats.match_rate || 0)}
+                </div>
+                <div className="text-sm text-gray-500">{t('knowledgeBase.matchRate')}</div>
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/pages/Settings.jsx">
+import React from 'react'
+import { useNavigate } from 'react-router-dom'
+import { ArrowLeft, Globe } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
+import { Card } from '../components/UI'
+import LanguageSwitcher from '../components/LanguageSwitcher'
+
+export default function Settings() {
+  const navigate = useNavigate()
+  const { t } = useTranslation()
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-4xl mx-auto p-6">
+        {/* Header */}
+        <div className="mb-8">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4"
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back to Dashboard
+          </button>
+          <h1 className="text-3xl font-bold text-gray-900">{t('settings.title')}</h1>
+        </div>
+
+        {/* Language Settings */}
+        <Card className="p-6">
+          <div className="flex items-center mb-4">
+            <Globe className="h-5 w-5 text-gray-400 mr-2" />
+            <h2 className="text-lg font-medium text-gray-900">{t('settings.language')}</h2>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {t('settings.resultsLanguage')}
+              </label>
+              <p className="text-sm text-gray-500 mb-3">
+                {t('settings.resultsLanguageDescription')}
+              </p>
+              <LanguageSwitcher />
+            </div>
+          </div>
+        </Card>
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/pages/Upload.jsx">
+import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Upload as UploadIcon, File, ArrowLeft } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
+import { Card, Button } from '../components/UI'
+import toast from 'react-hot-toast'
+
+export default function Upload() {
+  const navigate = useNavigate()
+  const { t } = useTranslation()
+  const [wiDocument, setWiDocument] = useState(null)
+  const [itemMaster, setItemMaster] = useState(null)
+  const [uploading, setUploading] = useState(false)
+
+  const handleFileChange = (event, type) => {
+    const file = event.target.files[0]
+    if (type === 'wi') {
+      setWiDocument(file)
+    } else {
+      setItemMaster(file)
+    }
+  }
+
+  const handleUpload = async () => {
+    if (!wiDocument || !itemMaster) {
+      toast.error('Please select both files')
+      return
+    }
+
+    try {
+      setUploading(true)
+
+      const formData = new FormData()
+      formData.append('wi_document', wiDocument)
+      formData.append('item_master', itemMaster)
+
+      const response = await fetch('/api/autonomous/upload', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) {
+        throw new Error('Upload failed')
+      }
+
+      const result = await response.json()
+
+      if (result.success) {
+        toast.success('Upload successful!')
+        navigate(`/processing/${result.workflow_id}`)
+      } else {
+        throw new Error(result.message || 'Upload failed')
+      }
+    } catch (error) {
+      console.error('Upload error:', error)
+      toast.error('Upload failed: ' + error.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-4xl mx-auto p-6">
+        {/* Header */}
+        <div className="mb-8">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4"
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back to Dashboard
+          </button>
+          <h1 className="text-3xl font-bold text-gray-900">{t('navigation.upload')}</h1>
+          <p className="text-gray-600 mt-1">
+            Upload your Japanese WI/QC document and Item Master to start autonomous processing
+          </p>
+        </div>
+
+        {/* Upload Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* WI Document Upload */}
+          <Card className="p-6">
+            <div className="text-center">
+              <File className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                WI/QC Document
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Supports PDF, DOCX, DOC, TXT formats
+              </p>
+              <input
+                type="file"
+                accept=".pdf,.docx,.doc,.txt"
+                onChange={(e) => handleFileChange(e, 'wi')}
+                className="hidden"
+                id="wi-upload"
+              />
+              <label
+                htmlFor="wi-upload"
+                className="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                <UploadIcon className="h-4 w-4 mr-2" />
+                Choose File
+              </label>
+              {wiDocument && (
+                <p className="mt-2 text-sm text-green-600">
+                  Selected: {wiDocument.name}
+                </p>
+              )}
+            </div>
+          </Card>
+
+          {/* Item Master Upload */}
+          <Card className="p-6">
+            <div className="text-center">
+              <File className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Item Master
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Supports Excel (XLSX, XLS) and CSV formats
+              </p>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={(e) => handleFileChange(e, 'item')}
+                className="hidden"
+                id="item-upload"
+              />
+              <label
+                htmlFor="item-upload"
+                className="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                <UploadIcon className="h-4 w-4 mr-2" />
+                Choose File
+              </label>
+              {itemMaster && (
+                <p className="mt-2 text-sm text-green-600">
+                  Selected: {itemMaster.name}
+                </p>
+              )}
+            </div>
+          </Card>
+        </div>
+
+        {/* Upload Button */}
+        <div className="text-center">
+          <Button
+            onClick={handleUpload}
+            disabled={!wiDocument || !itemMaster || uploading}
+            className="btn-primary"
+          >
+            {uploading ? 'Uploading...' : 'Start Processing'}
+          </Button>
+          <p className="text-sm text-gray-500 mt-4">
+            Our autonomous agents will process your documents through translation, 
+            extraction with WI/QC Item classification, and intelligent comparison stages. 
+            You can monitor progress in real-time.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/services/translation.js">
+// Translation utility functions for result data
+export class TranslationService {
+
+  // Translate classification labels
+  static translateClassificationLabel(label, language = 'en') {
+    const translations = {
+      en: {
+        1: 'Direct Material - Production',
+        2: 'Indirect Material - Support', 
+        3: 'Tools & Equipment',
+        4: 'Consumable Items',
+        5: 'Other/Miscellaneous'
+      },
+      ja: {
+        1: '直接材料 - 製造',
+        2: '間接材料 - サポート',
+        3: '工具・設備', 
+        4: '消耗品',
+        5: 'その他・雑項目'
+      }
+    }
+
+    return translations[language]?.[label] || translations.en[label] || `Label ${label}`
+  }
+
+  // Translate confidence levels
+  static translateConfidenceLevel(level, language = 'en') {
+    const translations = {
+      en: {
+        'high': 'High',
+        'medium': 'Medium',
+        'low': 'Low'
+      },
+      ja: {
+        'high': '高',
+        'medium': '中', 
+        'low': '低'
+      }
+    }
+
+    return translations[language]?.[level?.toLowerCase()] || level
+  }
+
+  // Translate match sources
+  static translateMatchSource(source, language = 'en') {
+    const translations = {
+      en: {
+        'knowledge_base': 'From Knowledge Base',
+        'supplier_bom': 'From Supplier BOM',
+        'hybrid': 'Verified Match',
+        'no_match': 'No Match'
+      },
+      ja: {
+        'knowledge_base': '知識ベースから',
+        'supplier_bom': 'サプライヤーBOMから', 
+        'hybrid': '検証済みマッチ',
+        'no_match': 'マッチなし'
+      }
+    }
+
+    return translations[language]?.[source] || source
+  }
+
+  // Translate action paths based on classification
+  static translateActionPath(classificationLabel, language = 'en') {
+    const paths = {
+      en: {
+        1: { icon: '🟢', text: 'Production Use' },
+        2: { icon: '🟡', text: 'Support Review' },
+        3: { icon: '🔧', text: 'Equipment Check' },
+        4: { icon: '📦', text: 'Inventory Track' },
+        5: { icon: '❓', text: 'Manual Review' }
+      },
+      ja: {
+        1: { icon: '🟢', text: '生産使用' },
+        2: { icon: '🟡', text: 'サポート確認' },
+        3: { icon: '🔧', text: '設備チェック' },
+        4: { icon: '📦', text: '在庫追跡' },
+        5: { icon: '❓', text: '手動確認' }
+      }
+    }
+
+    return paths[language]?.[classificationLabel] || paths.en[classificationLabel] || { icon: '❓', text: 'Review' }
+  }
+
+  // Translate boolean values
+  static translateBoolean(value, language = 'en') {
+    if (value === null || value === undefined) return '-'
+
+    const translations = {
+      en: {
+        true: 'Yes',
+        false: 'No'
+      },
+      ja: {
+        true: 'はい',
+        false: 'いいえ'
+      }
+    }
+
+    return translations[language]?.[value.toString()] || value.toString()
+  }
+
+  // Translate entire result item for display
+  static translateResultItem(item, language = 'en') {
+    if (!item) return item
+
+    return {
+      ...item,
+      classification_description: this.translateClassificationLabel(item.qa_classification_label, language),
+      confidence_level_text: this.translateConfidenceLevel(item.qa_confidence_level, language),
+      match_source_text: this.translateMatchSource(item.match_source, language),
+      action_path: this.translateActionPath(item.qa_classification_label, language),
+      consumable_text: this.translateBoolean(item.consumable_jigs_tools, language)
+    }
+  }
+}
+</file>
+
+<file path="frontend/src/styles/globals.css">
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+  }
+}
+</file>
+
+<file path="frontend/src/App.jsx">
+import React from 'react'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { Toaster } from 'react-hot-toast'
+import { TranslationProvider } from './hooks/useTranslation'
+import Layout from './components/Layout'
+import Dashboard from './pages/Dashboard'
+import Upload from './pages/Upload'
+import Processing from './pages/Processing'
+import Results from './pages/Results'
+import KnowledgeBase from './pages/KnowledgeBase'
+import Settings from './pages/Settings'
+
+function App() {
+  return (
+    <TranslationProvider>
+      <Router>
+        <div className="App">
+          <Layout>
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/upload" element={<Upload />} />
+              <Route path="/processing/:workflowId" element={<Processing />} />
+              <Route path="/results/:workflowId" element={<Results />} />
+              <Route path="/knowledge-base" element={<KnowledgeBase />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </Layout>
+          <Toaster 
+            position="top-right"
+            toastOptions={{
+              duration: 4000,
+              style: {
+                background: '#363636',
+                color: '#fff',
+              },
+            }}
+          />
+        </div>
+      </Router>
+    </TranslationProvider>
+  )
+}
+
+export default App
+</file>
+
+<file path="frontend/src/main.jsx">
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.jsx'
+import './styles/globals.css'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
+</file>
+
+<file path="frontend/index.html">
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Enhanced BOM Platform</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+</file>
+
+<file path="frontend/package.json">
+{
+  "name": "autonomous-bom-platform-enhanced",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.8.1",
+    "react-hot-toast": "^2.4.0",
+    "framer-motion": "^10.0.1",
+    "lucide-react": "^0.263.1",
+    "axios": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.15",
+    "@types/react-dom": "^18.2.7",
+    "@vitejs/plugin-react": "^4.0.3",
+    "eslint": "^8.45.0",
+    "eslint-plugin-react": "^7.32.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.3",
+    "vite": "^4.4.5",
+    "autoprefixer": "^10.4.14",
+    "postcss": "^8.4.24",
+    "tailwindcss": "^3.3.0"
+  }
+}
+</file>
+
+<file path="frontend/postcss.config.js">
+export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+</file>
+
+<file path="frontend/tailwind.config.js">
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        primary: {
+          50: '#eff6ff',
+          100: '#dbeafe',
+          200: '#bfdbfe',
+          300: '#93c5fd',
+          400: '#60a5fa',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+          800: '#1e40af',
+          900: '#1e3a8a',
+        },
+      },
+    },
+  },
+  plugins: [],
+}
+</file>
+
+<file path="frontend/vite.config.js">
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: true,
+    port: 5173,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      }
+    }
+  }
+})
+</file>
+
+</files>
